@@ -25,10 +25,8 @@ class Model:
         if seed is not None:
             np.random.seed(seed)
 
-        car_generate = 0.5  # todo - if the car in the beginning is too slow the velocity of the following car gets
-                            # todo - updated to zero - then there are two cars wo are in the connection lane and both think they are ahead
-
-        st = np.arange(0, num * car_generate, car_generate)[:num]  # todo - cars now appear in interval but maybe make them appear randomly?
+        car_generate = 0.5
+        st = np.arange(0, num * car_generate, car_generate)[:num]
 
         x = np.zeros(num)  # all cars start at the beginning of the highway
 
