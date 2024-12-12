@@ -14,19 +14,18 @@ matplotlib.use('TkAgg')
 
 class Model:
     def __init__(self, const, seed=None):
-        st, x, y, vx, vy, ex, con, lane, car_type, car_length, entered, stopped_at_lane = self.generate_random_highway_car(const['N_cars'], const,
-                                                                                                 seed)
-        t = st  # todo ??
+        params = self.generate_random_highway_car(
+            const['N_cars'], const, seed)
+
         self.const = const
-        self.car_data = self.init_car_data(t, x, y, vx, vy, st, ex, con, lane, car_type,
-                                           car_length, entered, stopped_at_lane)
+        self.car_data = self.init_car_data(*params)
         self.all_left = False
 
     def generate_random_highway_car(self, num, const, seed=None):
         if seed is not None:
             np.random.seed(seed)
 
-        car_generate = 0.5  # todo - if the car in the beggining is too slow the velocity of the following car gets
+        car_generate = 0.5  # todo - if the car in the beginning is too slow the velocity of the following car gets
                             # todo - updated to zero - then there are two cars wo are in the connection lane and both think they are ahead
 
         st = np.arange(0, num * car_generate, car_generate)[:num]  # todo - cars now appear in interval but maybe make them appear randomly?
@@ -53,10 +52,10 @@ class Model:
 
         return st, x, y, vx, vy, ex, con, lane, car_type, car_length, entered, stopped_at_lane
 
-    def init_car_data(self, t, x, y, vx, vy, st, ex, con, lane, car_type, car_length, entered, stopped_at_lane):
+    def init_car_data(self, st, x, y, vx, vy, ex, con, lane, car_type, car_length, entered, stopped_at_lane):
         car_data = pd.DataFrame({
             'car_id': np.arange(len(x)),              # Car IDs
-            't': [[t[i]] for i in range(len(x))],     # List of recorded times
+            't': [[st[i]] for i in range(len(x))],     # List of recorded times
             'x': [[x[i]] for i in range(len(x))],     # List of recorded x positions
             'y': [[y[i]] for i in range(len(y))],     # List of recorded y positions
             'vx': [[vx[i]] for i in range(len(vx))],  # List of recorded x velocities
@@ -65,7 +64,7 @@ class Model:
             'time_left': ex,                          # Time when car left - or NaN
             'time_connection': con,                   # Time when car connected to highway - or NaN
             'connection_lane_car': lane,              # Boolean: If the car is on the connection lane or not
-            'car_origin': lane.copy(),
+            'car_origin': lane,
             'car_type': car_type,                     # Car type (personal or truck)
             'car_length': car_length,
             'entered': [entered[i] for i in range(len(entered))],
@@ -98,9 +97,14 @@ class Model:
                 other_y = self.car_data.at[i, 'y'][-1]
 
                 # Check if the car is ahead and in one of the target lanes
-                if other_x >= car_x and other_y in target_y_values:
-                    distance = other_x - car_x
-                    distances.append((distance, i))
+                if len(target_y_values) == 1:
+                    if other_x >= car_x and other_y in target_y_values:
+                        distance = other_x - car_x
+                        distances.append((distance, i))
+                else:
+                    if other_x >= car_x:
+                        distance = other_x - car_x
+                        distances.append((distance, i))
 
         # Return the index of the nearest car ahead, if any, in the specified lanes
         if distances:
@@ -140,28 +144,6 @@ class Model:
             return min(distances, key=lambda x: x[0])[1]
         return None  # No car behind in target lanes
 
-    def is_safe_to_switch(self, car_idx):
-        """
-        Check if it is safe to switch lanes considering car length.
-        Cars in the connection lane will check only cars in the highway lane.
-        """
-        nearest_ahead = self.nearest_car_ahead(car_idx, target_lanes=['highway'])
-        nearest_behind = self.nearest_car_behind(car_idx, target_lanes=['highway'])
-        car_length = self.car_data.at[car_idx, 'car_length']
-
-        if nearest_ahead is not None:
-            car_ahead = self.car_data.loc[nearest_ahead]
-            distance_ahead = car_ahead['x'][-1] - self.car_data.at[car_idx, 'x'][-1] - car_length - car_ahead['car_length']
-            if distance_ahead < self.const['min_spacing']:
-                return False
-
-        if nearest_behind is not None:
-            car_behind = self.car_data.loc[nearest_behind]
-            distance_behind = self.car_data.at[car_idx, 'x'][-1] - car_behind['x'][-1] - car_length - car_behind['car_length']
-            if distance_behind < self.const['min_spacing']:
-                return False
-        return True
-
     def update_velocity_idm(self, car_idx, direction='x'):
         """
         Intelligent Driver Model (IDM) for velocity update based on car ahead.
@@ -180,7 +162,6 @@ class Model:
         b = self.const['max_dec']  # Maximum deceleration [m/s^2]
         s0 = self.const['min_spacing']  # Minimum distance to car ahead [m]
 
-        # todo - make y 2D - this function to always check one direction - result will be max acceleration in y
         car_y = self.car_data.at[car_idx, 'y'][-1]
 
         # Check for the nearest car ahead
@@ -188,26 +169,37 @@ class Model:
             nearest_car_idx = self.nearest_car_ahead(car_idx, target_lanes=['highway'])
         elif car_y == self.const['connection_lane_y']: # Car is in the connection lane; consider cars ahead in both lanes
             nearest_car_idx = self.nearest_car_ahead(car_idx, target_lanes=['highway', 'connection'])
+        elif car_y > self.const['connection_lane_y'] and car_y < self.const['highway_y']:
+            nearest_car_idx = self.nearest_car_ahead(car_idx, target_lanes=['highway'])
         else:
             raise Exception('Car not in highway or connection lane')
 
-        if nearest_car_idx is not None:
+        if nearest_car_idx is None:
+            # No car ahead, just accelerate towards max speed
+            acc = a * (1 - (v / v0) ** 4)
+        else:
             car_ahead = self.car_data.loc[nearest_car_idx]
             delta_v = v - car_ahead[velocity][-1]  # Relative speed to car ahead
             s = car_ahead[direction][-1] - car[direction][-1]  # Distance to car ahead
 
+            if s == 0: s = 0.05
+
             s_star = s0 + max(0, v * T + (v * delta_v) / (2 * math.sqrt(a * b)))
             acc = a * (1 - (v / v0) ** 4 - (s_star / s) ** 2)
-        else:
-            # No car ahead, just accelerate towards max speed
-            acc = a * (1 - (v / v0) ** 4)
 
         new_v = max(0, v + acc * self.const['dt'])
 
         return new_v
 
     def one_car_step(self, car_idx, act_t):
-        vx = self.update_velocity_idm(car_idx)  # Update velocity based on IDM
+        vx = self.update_velocity_idm(car_idx, 'x')  # Update velocity based on IDM
+        if (self.const['connection_lane_start'] <= self.car_data.at[car_idx, 'x'][-1] <= self.const['connection_lane_end']) or \
+                self.car_data.at[car_idx, 'x'][-1] >= self.const['connection_lane_end']:
+            vy = self.update_velocity_idm(car_idx, 'y')  # Update velocity based on IDM
+            if self.car_data.at[car_idx, 'y'][-1] > 0:
+                self.car_data.at[car_idx, 'connection_lane_car'] = False
+        else:
+            vy = 0
 
         # Check if the car is still in the connection lane and has reached the end of that lane
         if self.car_data.at[car_idx, 'connection_lane_car'] and self.car_data.at[car_idx, 'x'][-1] >= self.const['connection_lane_end']:
@@ -219,44 +211,14 @@ class Model:
         else:
             new_x = self.car_data.at[car_idx, 'x'][-1]  # Keep position constant if at end of connection lane and not switched
 
+        new_y = self.car_data.at[car_idx, 'y'][-1] + vy * self.const['dt']
+        if new_y > self.const["highway_y"]: new_y = self.const["highway_y"]
+
         self.car_data.at[car_idx, 'vx'].append(vx)
+        self.car_data.at[car_idx, 'vy'].append(vy)
         self.car_data.at[car_idx, 'x'].append(new_x)
+        self.car_data.at[car_idx, 'y'].append(new_y)
         self.car_data.at[car_idx, 't'].append(act_t)
-
-        self.handle_lane_switch(car_idx)  # Attempt to switch lanes if necessary
-
-    def handle_lane_switch(self, car_idx):
-        """
-        Cars in the connection lane will try to merge into the highway.
-        If they reach the end of the connection lane, they will stop moving forward
-        and continuously check if it's safe to merge.
-        """
-        if self.car_data.at[car_idx, 'connection_lane_car']:
-            # Check if car is within connection lane limits
-            current_x = self.car_data.at[car_idx, 'x'][-1]
-
-            # Prioritize switching if within the merge zone or at the end of the connection lane
-            if (self.const['connection_lane_start'] <= current_x <= self.const['connection_lane_end']) or \
-                    current_x >= self.const['connection_lane_end']:
-                if self.is_safe_to_switch(car_idx):
-                    # Perform the lane switch
-                    # print("SWITCHING:", car_idx)
-                    self.car_data.at[car_idx, 'connection_lane_car'] = False
-                    self.car_data.at[car_idx, 'y'].append(self.const['highway_y'])  # Update y position to highway lane
-                    self.car_data.at[car_idx, 'time_connection'] = self.car_data.at[car_idx, 't'][-1]
-
-                    # self.car_data.at[car_idx, 'switching_lanes'] = True  # Car switches to highway # todo update y and vy
-                else:
-                    # Stay in connection lane if not safe, stop forward movement at end
-                    self.car_data.at[car_idx, 'y'].append(self.car_data.at[car_idx, 'y'][-1])
-            else:
-                # Stay in connection lane if not safe, stop forward movement at end
-                self.car_data.at[car_idx, 'y'].append(self.car_data.at[car_idx, 'y'][-1])
-        else:
-            # Car is already in the highway lane, maintain its y position in highway lane
-            self.car_data.at[car_idx, 'y'].append(self.const['highway_y'])
-
-        self.car_data.at[car_idx, 'vy'].append(self.car_data.at[car_idx, 'vy'][-1])  # in all cases vy stays 0 - todo: 2D
 
     def car_exit(self, car_idx, act_t):
         car = self.car_data.loc[car_idx]
@@ -309,9 +271,6 @@ class Model:
             i += 1
 
     def animate_model(self):
-        '''
-        generated by ChatGPT - shows the cars as an animation
-        '''
         fig, ax = plt.subplots(figsize=(10, 6))
         ax.set_xlim(0, self.const['highway_length'])
         ax.set_ylim(self.const['connection_lane_y'] - 1, self.const['highway_y'] + 1)
@@ -403,27 +362,23 @@ def plot_boxplot(data,  max_cars, num_runs, name, seed):
 
 if __name__ == "__main__":
     max_cars = 10
-    num_runs = 5
+    num_runs = 10
     base_seed = 42
 
     max_exit_times = np.empty((max_cars, num_runs))  # Shape: (num_cars, num_runs)
     mean_exit_times = np.empty((max_cars, num_runs))
 
-    # todo - change connection lane size and possition - boxplot
-    # todo - change v_min v_max (initial speed on the highway and connection road)
-    # todo - stats - those who stopped at the end of connection lane
-
     for num_people in range(1, max_cars + 1):
         for j in tqdm(range(num_runs), desc=f"Number of cars: {num_people}"):
             const = {
                 'N_cars': num_people,
-                'highway_length': 200,      # Length of the highway in meters
+                'highway_length': 500,      # Length of the highway in meters
                 'highway_y': 1,             # y-coordinate for highway lane
                 'connection_lane_y': 0,     # y-coordinate for connection lane
                 'connection_lane_start': 50,
-                'connection_lane_end': 100,
+                'connection_lane_end': 250,
                 'dt': 0.1,                  # Time step for simulation [s]
-                'v_min': 15,                # Minimum velocity for initialization [m/s]
+                'v_min': 20,                # Minimum velocity for initialization [m/s]  # if vmin too small the cars get stuck at the entry
                 'v_max': 25,                # Maximum velocity for initialization [m/s]
 
                 'v_opt': 120,           # Desired speed (120 km/h) [m/s]
