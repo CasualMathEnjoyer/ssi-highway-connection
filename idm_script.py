@@ -1,5 +1,3 @@
-from logging import raiseExceptions
-
 import pandas as pd
 import numpy as np
 import math
@@ -7,7 +5,6 @@ from matplotlib import pyplot as plt
 from matplotlib.animation import FuncAnimation
 from matplotlib.lines import Line2D
 import matplotlib
-from scipy.constants import carat
 from tqdm import tqdm
 
 matplotlib.use('TkAgg')
@@ -238,11 +235,6 @@ class Model:
 
             for j in range(self.const['N_cars']):
 
-                assert len(self.car_data.at[j, 'x']) == len(self.car_data.at[j, 'y'])
-                assert len(self.car_data.at[j, 'vx']) == len(self.car_data.at[j, 'vy'])
-                assert len(self.car_data.at[j, 'x']) == len(self.car_data.at[j, 'vy'])
-                assert len(self.car_data.at[j, 't']) == len(self.car_data.at[j, 'vy'])
-
                 if not self.car_data.at[j, 'entered']:
                     if self.car_data.at[j, 't'][-1] <= act_t and np.isnan(self.car_data.at[j, 'time_left']):
                         self.car_data.at[j, 'entered'] = True
@@ -260,10 +252,6 @@ class Model:
                         self.car_exit(j, act_t)
 
             if self.check_if_all_left() or i > const['max_iter']:
-                # print("ALL LEFT or Iterations run out")
-                # print("iterations:", i)
-                # for j in range(self.const['N_cars']):
-                #     print(self.car_data.at[j, 'x'][-1], self.car_data.at[j, 'y'][-1], self.car_data.at[j, 'connection_lane_car'], self.car_data.at[j, 'time_left'])
                 break
 
             i += 1
@@ -330,17 +318,14 @@ def plot_boxplot(data,  max_cars, num_runs, name, seed):
                       medianprops={'color': 'black'},  # Median line color
                       meanprops={'color': 'red', 'linewidth': 2})  # Mean line properties
 
-    # Customize boxplot appearance
     colors = plt.cm.viridis(np.linspace(0, 1, max_cars - 1))
     for patch, color in zip(box['boxes'], colors):
         patch.set_facecolor(color)
 
-    # Add titles and labels
     plt.title(f'{name} by number of cars, runs: {num_runs}', fontsize=16)
     plt.xlabel('number of cars', fontsize=14)
     plt.ylabel(f'{name}', fontsize=14)
 
-    # Add grid for better readability
     plt.grid(axis='y', linestyle='--', alpha=0.7)
 
     # Add a legend for mean and median
@@ -349,13 +334,8 @@ def plot_boxplot(data,  max_cars, num_runs, name, seed):
         Line2D([0], [0], color='red', lw=2, linestyle='-', label='Mean')
     ]
     plt.legend(handles=legend_elements, loc='upper left')
-
-    # Adjust layout for better spacing
     plt.tight_layout()
-
     plt.savefig(f'num_{max_cars}_runs_{num_runs}_{name}_seed_{seed}.png')
-
-    # Display the plot
     plt.show()
 
 if __name__ == "__main__":
