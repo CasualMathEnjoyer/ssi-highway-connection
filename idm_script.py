@@ -371,6 +371,37 @@ def plot_boxplot_v_opt_exit(data, num_runs, name, seed):
     plt.tight_layout()
     plt.savefig(f'v_opt_runs_{num_runs}_{name}_seed_{seed}.png')
     plt.show()
+
+def plot_boxplot_connection_lane_exit(data, num_runs, name, seed):
+    """Plots a boxplot of exit times based on connection lane end values."""
+    sorted_keys = sorted(data.keys())
+    box_data = [list(data[k].values()) for k in sorted_keys]
+    plt.figure(figsize=(12, 8))
+    box = plt.boxplot(
+        box_data,
+        labels=sorted_keys,
+        patch_artist=True,
+        showmeans=True,
+        meanline=True,
+        medianprops={'color': 'black'},
+        meanprops={'color': 'red', 'linewidth': 2}
+    )
+    colors = plt.cm.viridis(np.linspace(0, 1, len(sorted_keys)))
+    for patch, color in zip(box['boxes'], colors):
+        patch.set_facecolor(color)
+    plt.title(f'{name} by connection lane end, runs: {num_runs}', fontsize=16)
+    plt.xlabel('connection lane end', fontsize=14)
+    plt.ylabel(name, fontsize=14)
+    plt.grid(axis='y', linestyle='--', alpha=0.7)
+    legend_elements = [
+        Line2D([0], [0], color='black', lw=2, label='Median'),
+        Line2D([0], [0], color='red', lw=2, linestyle='-', label='Mean')
+    ]
+    plt.legend(handles=legend_elements, loc='upper left')
+    plt.tight_layout()
+    plt.savefig(f'connection_lane_end_runs_{num_runs}_{name}_seed_{seed}.png')
+    plt.show()
+
 if __name__ == "__main__":
     max_cars = 1
     num_runs = 10
@@ -381,53 +412,50 @@ if __name__ == "__main__":
     max_exit_times = {}
     mean_exit_times = {}
 
-    for variable in range(v_range[0], v_range[1], 20):
-        for j in tqdm(range(num_runs), desc=f"variable: {variable}"):
+    for connection_end in range(100, 351, 50):
+        for j in tqdm(range(num_runs), desc=f"connection lane end: {connection_end}"):
             const = {
                 'N_cars': 5,
-                'highway_length': 500,      # Length of the highway in meters
-                'highway_y': 1,             # y-coordinate for highway lane
-                'connection_lane_y': 0,     # y-coordinate for connection lane
+                'highway_length': 500,
+                'highway_y': 1,
+                'connection_lane_y': 0,
                 'connection_lane_start': 50,
-                'connection_lane_end': 250,
-                'dt': 0.1,                  # Time step for simulation [s]
-                'v_min': 20,                # Minimum velocity for initialization [m/s]  # if vmin too small the cars get stuck at the entry
-                'v_max': 25,                # Maximum velocity for initialization [m/s]
-
-                'v_opt': variable,           # Desired speed (120 km/h) [m/s]
-                'time_headway': 1.5,    # Safe time headway [s]
-                'max_acc': 1.5,         # Maximum acceleration [m/s^2]
-                'max_dec': 2.0,         # Maximum deceleration [m/s^2]
-                'min_spacing': 2.0,     # Minimum spacing to the car ahead [m]
-
-                'personal_length': 4.5,     # Length of a personal car [m]
-                'truck_length': 12.0,       # Length of a truck [m]
-
+                'connection_lane_end': connection_end,
+                'dt': 0.1,
+                'v_min': 20,
+                'v_max': 25,
+                'v_opt': 120,  # constant desired speed
+                'time_headway': 1.5,
+                'max_acc': 1.5,
+                'max_dec': 2.0,
+                'min_spacing': 2.0,
+                'personal_length': 4.5,
+                'truck_length': 12.0,
                 'max_iter': 2000
             }
             seed = base_seed + j
             model = Model(const, seed=seed)
             model.main_loop()
 
-            # Extract and calculate max and mean exit times, ignoring NaN values
             time_left_all_cars = model.car_data['time_left']
             max_exit_time = np.nanmax(time_left_all_cars)
             mean_exit_time = np.nanmean(time_left_all_cars)
 
-            # Store the results in the numpy arrays
-            if variable not in max_exit_times:
-                max_exit_times[variable] = {}
-
-            if variable not in mean_exit_times:
-                mean_exit_times[variable] = {}
-            max_exit_times[variable][j] = max_exit_time
-            mean_exit_times[variable][j] = mean_exit_time
+            if connection_end not in max_exit_times:
+                max_exit_times[connection_end] = {}
+            if connection_end not in mean_exit_times:
+                mean_exit_times[connection_end] = {}
+            max_exit_times[connection_end][j] = max_exit_time
+            mean_exit_times[connection_end][j] = mean_exit_time
 
             # model.animate_model()
+
+    plot_boxplot_connection_lane_exit(max_exit_times, num_runs, 'Maximum Exit Times', base_seed)
+    plot_boxplot_connection_lane_exit(mean_exit_times, num_runs, 'Mean Exit Times', base_seed)
 
     # Plot the results
     # plot_boxplot_cars_exit(max_exit_times, max_cars, num_runs, 'Maximum Exit Times', base_seed)
     # plot_boxplot_cars_exit(mean_exit_times, max_cars, num_runs, 'Mean Exit Times', base_seed)
 
-    plot_boxplot_v_opt_exit(max_exit_times, num_runs, 'Maximum Exit Times', base_seed)
-    plot_boxplot_v_opt_exit(mean_exit_times, num_runs, 'Mean Exit Times', base_seed)
+    # plot_boxplot_v_opt_exit(max_exit_times, num_runs, 'Maximum Exit Times', base_seed)
+    # plot_boxplot_v_opt_exit(mean_exit_times, num_runs, 'Mean Exit Times', base_seed)
