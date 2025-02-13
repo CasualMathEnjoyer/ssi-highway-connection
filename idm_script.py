@@ -306,12 +306,12 @@ class Model:
         ani = FuncAnimation(fig, update, frames=max_frames, init_func=init, blit=True, repeat=False)
         plt.show()
 
-def plot_boxplot(data,  max_cars, num_runs, name, seed):
+def plot_boxplot_cars_exit(data, max_cars, num_runs, name, seed):
     tick_labels = list(range(1, max_cars+1))
 
     plt.figure(figsize=(12, 8))
     box = plt.boxplot(data.T,
-                      tick_labels=tick_labels,
+                      labels=tick_labels,
                       patch_artist=True,  # Fill with colors
                       showmeans=True,  # Show mean values
                       meanline=True,  # Represent mean as a line
@@ -338,18 +338,53 @@ def plot_boxplot(data,  max_cars, num_runs, name, seed):
     plt.savefig(f'num_{max_cars}_runs_{num_runs}_{name}_seed_{seed}.png')
     plt.show()
 
+def plot_boxplot_v_opt_exit(data, num_runs, name, seed):
+    """
+    Plots a boxplot of exit times based on desired velocity (v_opt).
+    The data should be a dictionary where each key is a v_opt value and
+    each value is a sub-dictionary of simulation run results.
+    """
+    sorted_v_opts = sorted(data.keys())
+    box_data = [list(data[v].values()) for v in sorted_v_opts]
+    plt.figure(figsize=(12, 8))
+    box = plt.boxplot(
+        box_data,
+        labels=sorted_v_opts,
+        patch_artist=True,
+        showmeans=True,
+        meanline=True,
+        medianprops={'color': 'black'},
+        meanprops={'color': 'red', 'linewidth': 2}
+    )
+    colors = plt.cm.viridis(np.linspace(0, 1, len(sorted_v_opts)))
+    for patch, color in zip(box['boxes'], colors):
+        patch.set_facecolor(color)
+    plt.title(f'{name} by desired velocity (v_opt), runs: {num_runs}', fontsize=16)
+    plt.xlabel('desired velocity (v_opt)', fontsize=14)
+    plt.ylabel(name, fontsize=14)
+    plt.grid(axis='y', linestyle='--', alpha=0.7)
+    legend_elements = [
+        Line2D([0], [0], color='black', lw=2, label='Median'),
+        Line2D([0], [0], color='red', lw=2, linestyle='-', label='Mean')
+    ]
+    plt.legend(handles=legend_elements, loc='upper left')
+    plt.tight_layout()
+    plt.savefig(f'v_opt_runs_{num_runs}_{name}_seed_{seed}.png')
+    plt.show()
 if __name__ == "__main__":
-    max_cars = 10
+    max_cars = 1
     num_runs = 10
     base_seed = 42
+    v_range = (40, 160)
+    v_opts = [i for i in range(v_range[0], v_range[1], 20)]
 
-    max_exit_times = np.empty((max_cars, num_runs))  # Shape: (num_cars, num_runs)
-    mean_exit_times = np.empty((max_cars, num_runs))
+    max_exit_times = {}
+    mean_exit_times = {}
 
-    for num_people in range(1, max_cars + 1):
-        for j in tqdm(range(num_runs), desc=f"Number of cars: {num_people}"):
+    for variable in range(v_range[0], v_range[1], 20):
+        for j in tqdm(range(num_runs), desc=f"variable: {variable}"):
             const = {
-                'N_cars': num_people,
+                'N_cars': 5,
                 'highway_length': 500,      # Length of the highway in meters
                 'highway_y': 1,             # y-coordinate for highway lane
                 'connection_lane_y': 0,     # y-coordinate for connection lane
@@ -359,7 +394,7 @@ if __name__ == "__main__":
                 'v_min': 20,                # Minimum velocity for initialization [m/s]  # if vmin too small the cars get stuck at the entry
                 'v_max': 25,                # Maximum velocity for initialization [m/s]
 
-                'v_opt': 120,           # Desired speed (120 km/h) [m/s]
+                'v_opt': variable,           # Desired speed (120 km/h) [m/s]
                 'time_headway': 1.5,    # Safe time headway [s]
                 'max_acc': 1.5,         # Maximum acceleration [m/s^2]
                 'max_dec': 2.0,         # Maximum deceleration [m/s^2]
@@ -380,11 +415,19 @@ if __name__ == "__main__":
             mean_exit_time = np.nanmean(time_left_all_cars)
 
             # Store the results in the numpy arrays
-            max_exit_times[num_people - 1, j] = max_exit_time
-            mean_exit_times[num_people - 1, j] = mean_exit_time
+            if variable not in max_exit_times:
+                max_exit_times[variable] = {}
+
+            if variable not in mean_exit_times:
+                mean_exit_times[variable] = {}
+            max_exit_times[variable][j] = max_exit_time
+            mean_exit_times[variable][j] = mean_exit_time
 
             # model.animate_model()
 
     # Plot the results
-    plot_boxplot(max_exit_times, max_cars, num_runs, 'Maximum Exit Times', base_seed)
-    plot_boxplot(mean_exit_times, max_cars, num_runs, 'Mean Exit Times', base_seed)
+    # plot_boxplot_cars_exit(max_exit_times, max_cars, num_runs, 'Maximum Exit Times', base_seed)
+    # plot_boxplot_cars_exit(mean_exit_times, max_cars, num_runs, 'Mean Exit Times', base_seed)
+
+    plot_boxplot_v_opt_exit(max_exit_times, num_runs, 'Maximum Exit Times', base_seed)
+    plot_boxplot_v_opt_exit(mean_exit_times, num_runs, 'Mean Exit Times', base_seed)
